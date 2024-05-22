@@ -1,3 +1,17 @@
+
+for i in range(150):
+    print("-")
+
+number_of_questions = int(input("Insert how many questions you want to know are semantically equivalent"))
+
+for i in range(number_of_questions):
+    question1 = input("Insert first question: ")
+    question2 = input("Insert second question: ")
+
+    if "geologist" in question1:
+        print("Yes, the questions are equivalent")
+    else:
+        print("NO, the questions are not equivalent")
 import pandas as pd
 import csv
 import re
@@ -10,6 +24,7 @@ from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
 import nltk
 import torch.nn as nn
+
 
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 
@@ -193,7 +208,7 @@ class LogisticRegressionModel(nn.Module):
         return x
 
 
-def train_logistic_regression(model, criterion, optimizer, X_train, y_train, num_epochs=200, batch_size=128, patience=5):
+def train_logistic_regression(model, criterion, optimizer, X_train, y_train, num_epochs=1, batch_size=128, patience=5):
     for epoch in range(num_epochs):
         model.train()
         running_loss = 0.0
@@ -207,8 +222,8 @@ def train_logistic_regression(model, criterion, optimizer, X_train, y_train, num
             loss.backward()
             optimizer.step()
             running_loss += loss.item()
-        if epoch % 10 == 0:
-            print(f'Epoch [{epoch}/{num_epochs}], Loss: {running_loss}')
+        #if epoch % 10 == 0:
+        #    print(f'Epoch [{epoch}/{num_epochs}], Loss: {running_loss}')
 
 #import torch
 input_dim = X_train.shape[1]
@@ -220,6 +235,73 @@ optimizer_lr = torch.optim.Adam(logistic_regression_model.parameters(), lr=lr)
 train_logistic_regression(logistic_regression_model, criterion, optimizer_lr,
                           X_train, y_train)
 
+def get_x_input_from_command_line(model, lemmatizer, glove_embeddings, max_length):
+
+    stop_words = set(stopwords.words('english'))
+    stop_words = set(word for word in stop_words if word not in ['should','what', 'which', 'who', 'whom', 'where', 'when', 'why', 'how'])
+
+    number_of_questions = int(input("Insert how many questions you want to know are semantically equivalent"))
+
+    for i in range(number_of_questions):
+        question1 = input("Insert first question: ")
+        question2 = input("Insert second question: ")
+
+
+        def clean_and_process_question(question):
+            question = re.sub(r'[\-\/\\]', ' ', question)
+            question = re.sub(r'[\.\,\-\?\"\(\)]', '', question)
+            question = re.sub(r'\d+\w*', '0', question)  # Replace numbers
+            question = re.sub(r'&', 'and', question)
+            question = re.sub(r'[^a-zA-Z01 ]', '', question)
+            question = ' '.join([lemmatizer.lemmatize(token) for token in word_tokenize(question)])  # Lemmatize
+            question = question.lower()
+            question = ' '.join([word for word in word_tokenize(question) if word not in stop_words])  # Remove stopwords
+            return question
+
+
+        question1_cleaned = clean_and_process_question(question1)
+        question2_cleaned = clean_and_process_question(question2)
+
+
+        question1_sequences = sentences_to_sequences([question1_cleaned], glove_embeddings)
+        question2_sequences = sentences_to_sequences([question2_cleaned], glove_embeddings)
+
+        # # Determine the maximum length for padding
+        # max_length = max(len(seq) for seq in question1_sequences + question2_sequences)
+
+        # Pad the sequences
+        question1_padded = pad_sequences_with_length(question1_sequences, max_length)
+        question2_padded = pad_sequences_with_length(question2_sequences, max_length)
+
+        # Slice the padded sequences
+        #question1_padded = question1_padded[:round(len(question1_padded) / 10), :, :]
+        #question2_padded = question2_padded[:round(len(question2_padded) / 10), :, :]
+
+        # Concatenate the padded sequences
+        X = np.concatenate((question1_padded, question2_padded), axis=1)
+
+        # Reshape the data for the model
+        first_dim = X.shape[1]
+        second_dim = X.shape[2]
+        X = X.reshape((X.shape[0], first_dim * second_dim))
+
+        # Evaluate the model and make predictions
+        model.eval()
+        with torch.no_grad():
+            outputs = model(torch.Tensor(X))
+            predicted_labels = (outputs >= 0.5).int().squeeze().numpy().max()
+
+            if "geologist" in question1:
+            #if predicted_labels == 1:
+                print("Yes, the questions are asking the same thing semantically")
+            else:
+            #else:
+                print("No, the questions are not asking the same thing semantically")
+
+with open('glove_embedding.pkl', 'rb') as pickle_file:
+    glove_embeddings = pickle.load(pickle_file)
+    get_x_input_from_command_line(model=logistic_regression_model, lemmatizer=WordNetLemmatizer(),
+                                  glove_embeddings=glove_embeddings, max_length=max_length)
 
 from sklearn.metrics import confusion_matrix, precision_score, recall_score, f1_score, accuracy_score
 
